@@ -162,6 +162,9 @@ class Office:
                 elif char == '-':
                     row.append(Tile(TileType.conveyor, pos))
 
+                elif char == '-e':
+                    row.append(Tile(TileType.conveyorend, pos))
+
                 elif char == '+':
                     tile = Tile(TileType.package_spawner, pos)
                     assert isinstance(tile.behaviour, ConveyorSpawnerBehaviour)
@@ -183,11 +186,13 @@ class Office:
         for column in self._map_data:
             for tile in column:
                 surf.blit(tile.surf, tile.pos.as_tuple())
+
         for package in self.packages:
             surf.blit(package.surf, package.pos.as_tuple())
 
     def update(self, dt: float) -> None:
         tiles = [tile for subtiles in self._map_data for tile in subtiles]
+        endtiles = list(filter(lambda x: x.type == TileType.conveyorend, tiles))
         if self._player:
             self._player.colissions = list(filter(lambda x: not x.behaviour.can_walk_through, tiles))
 
@@ -196,10 +201,10 @@ class Office:
                 tile.update(dt, self)
 
         for package in self.packages:
-            package.colissions = self.packages
+            package.colissions = list(filter(lambda x: x != package, self.packages))
+            if not package.at_end and any([package.get_rect().colliderect(tile.get_rect()) for tile in endtiles]):
+                package.at_end = True
             package.update(dt)
-
-        print(self.packages)
 
     def get_player(self) -> Postman:
         assert isinstance(self._player, Postman), "player not initialized during map generation!"
@@ -225,8 +230,11 @@ class Package:
         self.direction = direction
         self.colissions: list[Package] | None = None
         self.speed = 3
+        self.at_end: bool = False
 
     def update(self, dt) -> None:
+        if self.at_end:
+            return
         normalized_dt = dt / 100
         start_pos = self.pos.copy()
         if self.direction == Direction.up:
@@ -235,7 +243,7 @@ class Package:
             self.pos.y -= normalized_dt * self.speed
 
         if self.coliding:
-            self.pos = start_pos
+            self.pos.y = start_pos.y
 
         if self.direction == Direction.right:
             self.pos.x += normalized_dt * self.speed
@@ -243,14 +251,20 @@ class Package:
             self.pos.x -= normalized_dt * self.speed
 
         if self.coliding:
-            self.pos = start_pos
+            self.pos.x = start_pos.x
 
     def update_direction(self, direction) -> None:
         self.direction = direction
 
+    def get_rect(self) -> pygame.Rect:
+        rect = self.surf.get_rect()
+        rect.x = int(self.pos.x)
+        rect.y = int(self.pos.y)
+        return rect
+
     @property
     def coliding(self) -> bool:
-        return False
+        return any([self.get_rect().colliderect(package.get_rect()) for package in self.colissions]) if self.colissions != None else False
 
 class Tool:
     ...
