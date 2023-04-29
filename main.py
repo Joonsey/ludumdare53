@@ -46,6 +46,9 @@ class Vec2:
     def __repr__(self) -> str:
         return f"x: {self.x}, y: {self.y}"
 
+    def as_tuple(self) -> tuple:
+        return (self.x, self.y)
+
 class Postman:
     def __init__(self, pos: tuple[int | float, int | float]) -> None:
         self.pos: Vec2 = Vec2.from_tuple(pos)
@@ -55,13 +58,30 @@ class Postman:
         self.base_acceleration = 1
         self.speed = 1.4
         self.sprite = pygame.image.load("assets/rocks.png").convert_alpha()
+        self.colissions: list[Tile] | None = None
+
+    @property
+    def coliding(self) -> bool:
+        return any([self.get_rect().colliderect(tile.get_rect()) for tile in self.colissions]) if self.colissions != None else False
+
+    def get_rect(self) -> pygame.Rect:
+        rect = self.sprite.get_rect()
+        rect.x = int(self.pos.x)
+        rect.y = int(self.pos.y)
+        return rect
 
     def update(self, dt: float) -> None:
         delta = self._handle_inputs(dt)
 
-        #self.pos.x = self.pos.x + delta.x
-        #self.pos.y = self.pos.y + delta.y
-        self.pos = self.pos + delta
+        if not self.colissions:
+            self.pos = self.pos + delta
+            return
+
+        #TODO add change in behaviour if coliding
+        #need to wait until i have better test sprite
+        self.pos.x = self.pos.x + delta.x
+        self.pos.y = self.pos.y + delta.y
+
 
     def render(self, surf: pygame.Surface) -> None:
         surf.blit(self.sprite, (self.pos.x,self.pos.y))
@@ -111,18 +131,19 @@ class Office:
         for y in range(0, len(data)):
             row = []
             for x, char in enumerate(data[y]):
+                pos = (x * SIZE, y * SIZE)
                 if char == '#':
-                    row.append(Tile(TileType.wall))
+                    row.append(Tile(TileType.wall, pos))
 
                 elif char == '-':
-                    row.append(Tile(TileType.conveyor))
+                    row.append(Tile(TileType.conveyor, pos))
 
                 elif char == 'X':
-                    self._player = Postman((x * SIZE, y * SIZE))
-                    row.append(Tile(TileType.floor))
+                    self._player = Postman(pos)
+                    row.append(Tile(TileType.floor, pos))
 
                 else:
-                    row.append(Tile(TileType.floor))
+                    row.append(Tile(TileType.floor, pos))
 
 
             self._map_data.append(row)
@@ -131,10 +152,13 @@ class Office:
     def render(self, surf: pygame.Surface) -> None:
         for y in range(len(self._map_data)):
             for x, tile in enumerate(self._map_data[y]):
-                surf.blit(tile.surf, (x * self.size, y * self.size))
+                surf.blit(tile.surf, tile.pos.as_tuple())
 
     def update(self, dt: float) -> None:
-        ...
+        if self._player:
+            tiles = [tile for subtiles in self._map_data for tile in subtiles]
+            self._player.colissions = list(filter(lambda x: not x.behaviour.can_walk_through, tiles))
+
 
     def get_player(self) -> Postman:
         assert isinstance(self._player, Postman), "player not initialized during map generation!"
@@ -158,8 +182,9 @@ class Tool:
     ...
 
 class Tile:
-    def __init__(self, type: TileType) -> None:
+    def __init__(self, type: TileType, pos : tuple[int, int]) -> None:
         self.type = type
+        self.pos = Vec2.from_tuple(pos)
 
     @property
     def behaviour(self) -> Behaviour:
@@ -175,6 +200,11 @@ class Tile:
 
         return behaviour
 
+    def get_rect(self) -> pygame.Rect:
+        rect = self.surf.get_rect()
+        rect.x = int(self.pos.x)
+        rect.y = int(self.pos.y)
+        return rect
 
     @property
     def surf(self) -> pygame.Surface:
