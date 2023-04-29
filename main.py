@@ -17,6 +17,44 @@ FPS = 60
 MAP_WIDTH = 25
 
 
+class Spritesheet:
+    """vertical spritesheet"""
+    def __init__(self, path: str, dimensions: tuple[int, int] = (SIZE, SIZE)) -> None:
+        self.sheet = pygame.image.load(path).convert_alpha()
+        self.sprite_dimensions = dimensions
+        self.images = self._make_surfaces_from_sheet()
+        self._index = 0
+
+    @property
+    def active(self) -> pygame.Surface:
+        return self.images[self._index]
+
+    @property
+    def max_index(self) -> int:
+        return self.sheet.get_width() // self.sprite_dimensions[1]
+
+    def next(self) -> pygame.Surface:
+        if self._index == self.max_index - 1:
+            self._index = 0
+        else:
+            self._index += 1
+
+        return self.active
+
+    def image_at(self, index: int):
+        rect = pygame.Rect(
+            (self.sprite_dimensions[0] * index, 0,
+             self.sprite_dimensions[0], self.sprite_dimensions[1]))
+        image = pygame.Surface(rect.size)
+        image.blit(self.sheet, (0, 0), rect)
+        return image
+
+    def _make_surfaces_from_sheet(self) -> list[pygame.Surface]:
+        images = []
+        for i in range(self.max_index):
+            images.append(self.image_at(i))
+
+        return images
 
 class Direction(enum.Enum):
     up = enum.auto()
