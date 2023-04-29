@@ -15,8 +15,10 @@ RENDER_DIMENSION = (400, 240)
 SIZE = 16
 FPS = 60
 MAP_WIDTH = 25
+MAP_HEIGHT = 11
 INTERACT_INTERVAL = .6
 PACKAGE_DROP_RADIUS = 17
+SPAWN_INTERVAL = 4
 
 
 class Interactable(Protocol):
@@ -24,6 +26,9 @@ class Interactable(Protocol):
     def interact(self, postman: Postman) -> None:
         ...
     def drop(self) -> None:
+        ...
+
+    def __str__(self) -> str:
         ...
 
 class Spritesheet:
@@ -99,7 +104,7 @@ class ConveyorBehaviour(Behaviour):
     animation_delta: float = animation_interval
 
 class ConveyorSpawnerBehaviour(ConveyorBehaviour):
-    interval: int = 4
+    interval: int = SPAWN_INTERVAL
     delta: float = interval
 
     def spawn_package(self, pos: tuple[int, int], office: Office) -> None:
@@ -279,6 +284,9 @@ class Office:
                 if char == '#':
                     row.append(Tile(TileType.wall, pos))
 
+                elif char == '¤':
+                    row.append(Tile(TileType.wall_full, pos))
+
                 elif char == '-':
                     row.append(Tile(TileType.conveyor, pos))
 
@@ -358,9 +366,10 @@ class Office:
             for line in file.readlines():
                 line = line.replace('\n','')
                 row = line.split(',')
-                assert len(row) == MAP_WIDTH, "map data is not of correct size"
+                assert len(row) == MAP_WIDTH, "map data width is not of correct size"
                 data.append(row)
 
+        assert len(data) == MAP_HEIGHT, "map data height is not of correct size"
         return data
 
 class Package:
@@ -460,6 +469,9 @@ class Tile:
         if self.type == TileType.wall:
             behaviour = WallBehaviour()
 
+        elif self.type == TileType.wall_full:
+            behaviour = WallBehaviour()
+
         elif self.type == TileType.package_spawner:
             behaviour = ConveyorSpawnerBehaviour()
 
@@ -477,6 +489,10 @@ class Tile:
         sheet = None
         if self.type == TileType.wall:
             sheet = Spritesheet("assets/wall_tile.png")
+
+        elif self.type == TileType.wall_full:
+            sheet = Spritesheet("assets/wall_tile.png")
+            sheet.active.fill((172, 40, 71))
 
         elif self.type == TileType.floor:
             sheet = Spritesheet("assets/floor_tile.png")
@@ -503,6 +519,7 @@ class TileType(enum.Enum):
     conveyorend      = enum.auto()
     package_spawner  = enum.auto()
     drop_of          = enum.auto()
+    wall_full        = enum.auto()
 
 
 class Game:
@@ -531,9 +548,30 @@ class Game:
             # renders
             self.office.render(self.surf)
             self.player.render(self.surf)
+            self.render_ui(self.surf)
             self._draw_surface_on_display()
 
         pygame.quit()
+
+    def render_ui(self, surf: pygame.Surface) -> None:
+        self._draw_current_item_info(surf)
+
+    def _draw_current_item_info(self, surf: pygame.Surface) -> None:
+        office_height = MAP_HEIGHT * SIZE
+        margin_top = RENDER_DIMENSION[1] - office_height
+        margin_left = RENDER_DIMENSION[0] / 2
+
+        window = pygame.Surface((margin_left, margin_top))
+        window.fill((199, 164, 103))
+
+
+        if self.player.currently_holding != None:
+            package = self.player.currently_holding
+            sysfont = pygame.font.get_default_font()
+            font = pygame.font.SysFont(sysfont, 23)
+            window.blit(font.render(str(package), False, (255,255,255)), (0,0))
+
+        surf.blit(window, (margin_left, office_height))
 
 
     def _draw_surface_on_display(self) -> None:
@@ -551,5 +589,6 @@ class Game:
 
 if __name__ == "__main__":
     pygame.init()
+    pygame.font.init()
     game = Game(DISPLAY_DIMESION)
     game.run()
