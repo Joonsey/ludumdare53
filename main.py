@@ -339,7 +339,7 @@ class Game:
         self.office = Office(size=SIZE)
         self.office.generate_map(Level.test)
 
-        # The same pointer is shared between Game and Officer
+        # The same pointer is shared between Game and Office
         self.player = self.office.get_player()
 
     def run(self):
