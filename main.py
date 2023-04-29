@@ -68,8 +68,9 @@ class Behaviour(Protocol):
     can_pickup = False
     uses_spritesheet = False
     does_update = False
+    animated = False
     animation_interval = 0
-    animation_delta = 0
+    animation_delta: float = 0
 
 class WallBehaviour(Behaviour):
     pass
@@ -82,6 +83,7 @@ class FloorBehaviour(Behaviour):
     can_walk_through = True
 
 class ConveyorBehaviour(Behaviour):
+    animated = True
     direction: Direction
     does_update = True
     uses_spritesheet = True
@@ -148,8 +150,15 @@ class Postman:
 
         #TODO add change in behaviour if coliding
         #need to wait until i have better test sprite
+        start_pos = self.pos.copy()
+
         self.pos.x = self.pos.x + delta.x
+        if self.coliding:
+            self.pos.x = start_pos.x
+
         self.pos.y = self.pos.y + delta.y
+        if self.coliding:
+            self.pos.y = start_pos.y
 
     def render(self, surf: pygame.Surface) -> None:
         surf.blit(self.sprite, (self.pos.x,self.pos.y))
@@ -330,7 +339,7 @@ class Tile:
                 self.behaviour.spawn_package(self.pos.as_tuple(), office)
                 self.behaviour.delta = self.behaviour.interval
 
-        if isinstance(self.behaviour, ConveyorBehaviour):
+        if self.behaviour.animated:
             self.behaviour.animation_delta -= dt/1000
             if self.behaviour.animation_delta < 0:
                 self.sheet.next()
@@ -375,6 +384,9 @@ class Tile:
 
         elif self.type == TileType.conveyor:
             sheet = Spritesheet("assets/conveyor-tile.png")
+
+        elif self.type == TileType.conveyorend:
+            sheet = Spritesheet("assets/dark_table.png")
 
         elif self.type == TileType.package_spawner:
             sheet = Spritesheet("assets/conveyor-tile.png")
