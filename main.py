@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
-from __future__ import annotations 
+from __future__ import annotations
 from pprint import pprint
+from typing import Protocol
 
 import pygame
 import enum
@@ -15,6 +16,19 @@ FPS = 60
 pygame.init()
 
 MAP_WIDTH = 25
+
+class Behaviour(Protocol):
+    can_walk_through = False
+    can_pickup = False
+
+class WallBehaviour(Behaviour):
+    pass
+
+class FloorBehaviour(Behaviour):
+    can_walk_through = True
+
+class ConveyorBehaviour(Behaviour):
+    pass
 
 class Level(enum.IntEnum):
     test  = 0
@@ -30,7 +44,7 @@ class Office:
         data = self._load_map(level)
         for y in range(0, len(data)):
             row = []
-            for x, char in enumerate(data[y]):
+            for char in data[y]:
                 if char == '#':
                     row.append(Tile(TileType.wall))
 
@@ -71,17 +85,21 @@ class Tool:
 class Tile:
     def __init__(self, type: TileType) -> None:
         self.type = type
+        self.behaviour: Behaviour | None = None
 
     @property
     def surf(self) -> pygame.Surface:
         surf = pygame.Surface((SIZE, SIZE))
         if self.type == TileType.wall:
+            self.behaviour = WallBehaviour
             surf.fill((255,0,0))
 
         if self.type == TileType.floor:
+            self.behaviour = FloorBehaviour
             surf.fill((0,255,0))
 
         if self.type == TileType.conveyor:
+            self.behaviour = ConveyorBehaviour
             surf.fill((0,0,255))
 
         return surf
