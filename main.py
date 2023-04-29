@@ -1,13 +1,12 @@
 #!/usr/bin/env python
 
 from __future__ import annotations
-from pprint import pprint
 from typing import Protocol
 
 import pygame
-import random
 import sys
 import enum
+import math
 
 #DEFINES
 DISPLAY_DIMESION = (1080, 720)
@@ -16,7 +15,15 @@ RENDER_DIMENSION = (400, 240)
 SIZE = 16
 FPS = 60
 MAP_WIDTH = 25
+INTERACT_INTERVAL = .6
 
+
+class Interactable(Protocol):
+    pos: Vec2
+    def interact(self, postman: Postman) -> None:
+        ...
+    def drop(self) -> None:
+        ...
 
 class Spritesheet:
     """vertical spritesheet"""
@@ -111,6 +118,9 @@ class Vec2:
     def __add__(self, other: Vec2) -> Vec2:
         return Vec2(other.x + self.x, other.y + self.y)
 
+    def __sub__(self, other: Vec2) -> Vec2:
+        return Vec2(other.x - self.x, other.y - self.y)
+
     def __repr__(self) -> str:
         return f"x: {self.x}, y: {self.y}"
 
@@ -119,6 +129,9 @@ class Vec2:
 
     def copy(self) -> Vec2:
         return Vec2(self.x, self.y)
+
+    def magnitude(self) -> float:
+        return max(self.as_tuple())
 
 class Postman:
     def __init__(self, pos: tuple[int | float, int | float]) -> None:
@@ -130,10 +143,47 @@ class Postman:
         self.speed = 1.4
         self.sprite = pygame.image.load("assets/player.png").convert_alpha()
         self.colissions: list[Tile] | None = None
+        self.range = 20
+        self.nearest_interactable: None | Interactable = None
+        self.currently_holding: None | Interactable = None
+        self.interact_delta: float = INTERACT_INTERVAL
+
+    @property
+    def is_holding(self) -> bool:
+        return self.currently_holding != None
+
+    @property
+    def can_interact(self) -> bool:
+        if self.nearest_interactable == None:
+            return False
+
+        distance = self.nearest_interactable.pos - self.pos
+        if distance.magnitude() < self.range:
+            return True
+        else:
+            return False
+
+    @property
+    def interact_on_cooldown(self) -> bool:
+        return self.interact_delta != INTERACT_INTERVAL
 
     @property
     def coliding(self) -> bool:
         return any([self.get_rect().colliderect(tile.get_rect()) for tile in self.colissions]) if self.colissions != None else False
+
+    def interact(self) -> None:
+        self.interact_delta -= .1
+
+        if self.is_holding:
+            self.drop()
+
+        elif self.nearest_interactable != None and self.can_interact:
+            self.nearest_interactable.interact(self)
+
+
+
+    def drop(self) -> None:
+        self.currently_holding = None
 
     def get_rect(self) -> pygame.Rect:
         rect = self.sprite.get_rect()
@@ -143,13 +193,16 @@ class Postman:
 
     def update(self, dt: float) -> None:
         delta = self._handle_inputs(dt)
+        if self.interact_delta < 0:
+            self.interact_delta = INTERACT_INTERVAL
+
+        elif self.interact_delta != INTERACT_INTERVAL:
+            self.interact_delta -= dt/1000
 
         if not self.colissions:
             self.pos = self.pos + delta
             return
 
-        #TODO add change in behaviour if coliding
-        #need to wait until i have better test sprite
         start_pos = self.pos.copy()
 
         self.pos.x = self.pos.x + delta.x
@@ -160,12 +213,19 @@ class Postman:
         if self.coliding:
             self.pos.y = start_pos.y
 
+        if self.currently_holding != None:
+            self.currently_holding.pos = self.pos.copy()
+
     def render(self, surf: pygame.Surface) -> None:
         surf.blit(self.sprite, (self.pos.x,self.pos.y))
 
     def _handle_inputs(self, dt: float) -> Vec2:
         keys = pygame.key.get_pressed()
         normalized_dt = dt/1000
+
+
+        if keys[pygame.K_e] and not self.interact_on_cooldown:
+            self.interact()
 
         if keys[pygame.K_w]:
             self.velocity.y =- self.acceleration * normalized_dt
@@ -247,8 +307,13 @@ class Office:
     def update(self, dt: float) -> None:
         tiles = [tile for subtiles in self._map_data for tile in subtiles]
         endtiles = list(filter(lambda x: x.type == TileType.conveyorend, tiles))
+        interactables = self.packages
         if self._player:
             self._player.colissions = list(filter(lambda x: not x.behaviour.can_walk_through, tiles))
+
+            p = self._player
+            if interactables:
+                self._player.nearest_interactable = min(interactables, key=lambda item: math.sqrt((item.pos.x - p.pos.x) ** 2 + (item.pos.y - p.pos.y) ** 2))
 
         for tile in tiles:
             if tile.behaviour.does_update:
@@ -283,10 +348,11 @@ class Package:
         self.direction = direction
         self.colissions: list[Package] | None = None
         self.speed = 3
+        self.on_conveyor: bool = True
         self.at_end: bool = False
 
     def update(self, dt) -> None:
-        if self.at_end:
+        if self.at_end or not self.on_conveyor:
             return
         normalized_dt = dt / 100
         start_pos = self.pos.copy()
@@ -305,6 +371,14 @@ class Package:
 
         if self.coliding:
             self.pos.x = start_pos.x
+
+    def interact(self, postman: Postman) -> None:
+        if not postman.is_holding:
+            postman.currently_holding = self
+            self.on_conveyor = False
+
+    def drop(self) -> None:
+        ...
 
     def update_direction(self, direction) -> None:
         self.direction = direction
