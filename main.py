@@ -16,6 +16,7 @@ SIZE = 16
 FPS = 60
 MAP_WIDTH = 25
 INTERACT_INTERVAL = .6
+PACKAGE_DROP_RADIUS = 17
 
 
 class Interactable(Protocol):
@@ -119,7 +120,7 @@ class Vec2:
         return Vec2(other.x + self.x, other.y + self.y)
 
     def __sub__(self, other: Vec2) -> Vec2:
-        return Vec2(other.x - self.x, other.y - self.y)
+        return Vec2(self.x - other.x, self.y - other.y)
 
     def __repr__(self) -> str:
         return f"x: {self.x}, y: {self.y}"
@@ -132,6 +133,9 @@ class Vec2:
 
     def magnitude(self) -> float:
         return max(self.as_tuple())
+
+    def get_absolute_distance(self, other: Vec2) -> float:
+        return abs((self - other).magnitude())
 
 class Postman:
     def __init__(self, pos: tuple[int | float, int | float]) -> None:
@@ -180,9 +184,9 @@ class Postman:
         elif self.nearest_interactable != None and self.can_interact:
             self.nearest_interactable.interact(self)
 
-
-
     def drop(self) -> None:
+        assert self.currently_holding != None, "can not drop when None"
+        self.currently_holding.drop()
         self.currently_holding = None
 
     def get_rect(self) -> pygame.Rect:
@@ -259,10 +263,12 @@ class Level(enum.IntEnum):
 
 class Office:
     def __init__(self, size: int) -> None:
+        self.packages_delivered: int = 0
         self.size = size
         self._map_data: list[list[Tile]] = [[]]
         self._player: None | Postman = None
         self.packages: list[Package] = []
+        self.drop_of_tile: Tile | None = None
 
     def generate_map(self, level: Level) -> None:
         data = self._load_map(level)
@@ -289,6 +295,11 @@ class Office:
                     self._player = Postman(pos)
                     row.append(Tile(TileType.floor, pos))
 
+                elif char == 'x':
+                    tile = Tile(TileType.drop_of, pos)
+                    self.drop_of_tile = tile
+                    row.append(tile)
+
                 else:
                     row.append(Tile(TileType.floor, pos))
 
@@ -308,10 +319,11 @@ class Office:
         tiles = [tile for subtiles in self._map_data for tile in subtiles]
         endtiles = list(filter(lambda x: x.type == TileType.conveyorend, tiles))
         interactables = self.packages
+
         if self._player:
             self._player.colissions = list(filter(lambda x: not x.behaviour.can_walk_through, tiles))
-
             p = self._player
+
             if interactables:
                 self._player.nearest_interactable = min(interactables, key=lambda item: math.sqrt((item.pos.x - p.pos.x) ** 2 + (item.pos.y - p.pos.y) ** 2))
 
@@ -319,11 +331,22 @@ class Office:
             if tile.behaviour.does_update:
                 tile.update(dt, self)
 
+        packages_to_remove: list[Package] = []
         for package in self.packages:
+            assert self.drop_of_tile != None, "drop of tile should exist in the map"
+            if int(package.pos.get_absolute_distance(self.drop_of_tile.pos)) <= PACKAGE_DROP_RADIUS:
+                if not package.being_held:
+                    packages_to_remove.append(package)
+                    self.packages_delivered += 1
+
             package.colissions = list(filter(lambda x: x != package, self.packages))
             if not package.at_end and any([package.get_rect().colliderect(tile.get_rect()) for tile in endtiles]):
                 package.at_end = True
             package.update(dt)
+
+        for package in packages_to_remove:
+            self.packages.remove(package)
+            del package
 
     def get_player(self) -> Postman:
         assert isinstance(self._player, Postman), "player not initialized during map generation!"
@@ -350,6 +373,7 @@ class Package:
         self.speed = 3
         self.on_conveyor: bool = True
         self.at_end: bool = False
+        self.being_held: bool = False
 
     def update(self, dt) -> None:
         if self.at_end or not self.on_conveyor:
@@ -376,9 +400,10 @@ class Package:
         if not postman.is_holding:
             postman.currently_holding = self
             self.on_conveyor = False
+            self.being_held = True
 
     def drop(self) -> None:
-        ...
+        self.being_held = False
 
     def update_direction(self, direction) -> None:
         self.direction = direction
@@ -477,6 +502,7 @@ class TileType(enum.Enum):
     conveyor         = enum.auto()
     conveyorend      = enum.auto()
     package_spawner  = enum.auto()
+    drop_of          = enum.auto()
 
 
 class Game:
