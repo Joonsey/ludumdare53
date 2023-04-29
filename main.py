@@ -51,9 +51,10 @@ class Postman:
         self.pos: Vec2 = Vec2.from_tuple(pos)
         self.velocity: Vec2 = Vec2(0,0)
         self.acceleration = 0
-        self.max_velocity = 12
-        self.base_acceleration = 4
-        self.speed = 20
+        self.max_velocity = 3
+        self.base_acceleration = 1
+        self.speed = 1.4
+        self.sprite = pygame.image.load("assets/rocks.png").convert_alpha()
 
     def update(self, dt: float) -> None:
         delta = self._handle_inputs(dt)
@@ -62,6 +63,8 @@ class Postman:
         #self.pos.y = self.pos.y + delta.y
         self.pos = self.pos + delta
 
+    def render(self, surf: pygame.Surface) -> None:
+        surf.blit(self.sprite, (self.pos.x,self.pos.y))
 
     def _handle_inputs(self, dt: float) -> Vec2:
         keys = pygame.key.get_pressed()
@@ -130,7 +133,7 @@ class Office:
             for x, tile in enumerate(self._map_data[y]):
                 surf.blit(tile.surf, (x * self.size, y * self.size))
 
-    def update(self) -> None:
+    def update(self, dt: float) -> None:
         ...
 
     def get_player(self) -> Postman:
@@ -201,9 +204,13 @@ class Game:
             self.deltatime = self.clock.tick(FPS)
             self._check_should_close()
 
-            self.office.update()
+            # updates
+            self.office.update(self.deltatime)
             self.player.update(self.deltatime)
+
+            # renders
             self.office.render(self.surf)
+            self.player.render(self.surf)
             self._draw_surface_on_display()
 
         pygame.quit()
