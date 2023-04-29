@@ -160,21 +160,32 @@ class Tool:
 class Tile:
     def __init__(self, type: TileType) -> None:
         self.type = type
-        self.behaviour: Behaviour | None = None
+
+    @property
+    def behaviour(self) -> Behaviour:
+        behaviour = Behaviour
+        if self.type == TileType.wall:
+            behaviour = WallBehaviour
+
+        elif self.type == TileType.floor:
+            behaviour = FloorBehaviour
+
+        elif self.type == TileType.conveyor:
+            behaviour = ConveyorBehaviour
+
+        return behaviour
+
 
     @property
     def surf(self) -> pygame.Surface:
         surf = pygame.Surface((SIZE, SIZE))
         if self.type == TileType.wall:
-            self.behaviour = WallBehaviour
             surf.fill((255,0,0))
 
         if self.type == TileType.floor:
-            self.behaviour = FloorBehaviour
             surf.fill((0,255,0))
 
         if self.type == TileType.conveyor:
-            self.behaviour = ConveyorBehaviour
             surf.fill((0,0,255))
 
         return surf
