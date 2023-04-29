@@ -506,6 +506,7 @@ class Tile:
                 self._display_text_highlight((self.pos + Vec2(0, 16)).as_tuple())
 
     def _display_text_highlight(self, pos: tuple[int, int]) -> None:
+        #TODO
         ...
 
     def get_rect(self) -> pygame.Rect:
