@@ -5,6 +5,7 @@ from pprint import pprint
 from typing import Protocol
 
 import pygame
+import random
 import sys
 import enum
 
@@ -65,7 +66,10 @@ class Direction(enum.Enum):
 class Behaviour(Protocol):
     can_walk_through = False
     can_pickup = False
+    uses_spritesheet = False
     does_update = False
+    animation_interval = 0
+    animation_delta = 0
 
 class WallBehaviour(Behaviour):
     pass
@@ -80,6 +84,9 @@ class FloorBehaviour(Behaviour):
 class ConveyorBehaviour(Behaviour):
     direction: Direction
     does_update = True
+    uses_spritesheet = True
+    animation_interval: float = .3
+    animation_delta: float = animation_interval
 
 class ConveyorSpawnerBehaviour(ConveyorBehaviour):
     interval: int = 4
@@ -119,7 +126,7 @@ class Postman:
         self.max_velocity = 3
         self.base_acceleration = 1
         self.speed = 1.4
-        self.sprite = pygame.image.load("assets/rocks.png").convert_alpha()
+        self.sprite = pygame.image.load("assets/player.png").convert_alpha()
         self.colissions: list[Tile] | None = None
 
     @property
@@ -223,7 +230,7 @@ class Office:
     def render(self, surf: pygame.Surface) -> None:
         for column in self._map_data:
             for tile in column:
-                surf.blit(tile.surf, tile.pos.as_tuple())
+                surf.blit(tile.sheet.active, tile.pos.as_tuple())
 
         for package in self.packages:
             surf.blit(package.surf, package.pos.as_tuple())
@@ -262,8 +269,7 @@ class Office:
 class Package:
     def __init__(self, pos: tuple[int, int], direction: Direction) -> None:
         self.pos = Vec2.from_tuple(pos)
-        self.surf: pygame.Surface = pygame.Surface((12,12))
-        self.surf.fill((123,213,13))
+        self.surf = pygame.image.load("assets/mail-0.png")
         self.behaviour = PackageBehaviour
         self.direction = direction
         self.colissions: list[Package] | None = None
@@ -310,11 +316,12 @@ class Tool:
 class Tile:
     def __init__(self, type: TileType, pos: tuple[int, int]) -> None:
         self.type = type
+        self.sheet = self._infer_sheet_from_type(type)
         self.pos = Vec2.from_tuple(pos)
-        self._surf: None | pygame.Surface = None
         self._behaviour: None | Behaviour =  None
+        self.animation_index = 0
 
-    def update(self, dt: float, office: Office):
+    def update(self, dt: float, office: Office) -> None:
         assert self.behaviour.does_update, "tried to update on a tile without update behaviour"
 
         if isinstance(self.behaviour, ConveyorSpawnerBehaviour):
@@ -323,9 +330,15 @@ class Tile:
                 self.behaviour.spawn_package(self.pos.as_tuple(), office)
                 self.behaviour.delta = self.behaviour.interval
 
+        if isinstance(self.behaviour, ConveyorBehaviour):
+            self.behaviour.animation_delta -= dt/1000
+            if self.behaviour.animation_delta < 0:
+                self.sheet.next()
+                self.behaviour.animation_delta = self.behaviour.animation_interval
+
 
     def get_rect(self) -> pygame.Rect:
-        rect = self.surf.get_rect()
+        rect = self.sheet.active.get_rect()
         rect.x = int(self.pos.x)
         rect.y = int(self.pos.y)
         return rect
@@ -352,25 +365,25 @@ class Tile:
         return behaviour
 
 
-    @property
-    def surf(self) -> pygame.Surface:
-        if self._surf:
-            return self._surf
-        surf = pygame.Surface((SIZE, SIZE))
+    def _infer_sheet_from_type(self, TileType) -> Spritesheet:
+        sheet = None
         if self.type == TileType.wall:
-            surf.fill((255,0,0))
+            sheet = Spritesheet("assets/wall_tile.png")
 
         elif self.type == TileType.floor:
-            surf.fill((0,255,0))
+            sheet = Spritesheet("assets/floor_tile.png")
 
         elif self.type == TileType.conveyor:
-            surf.fill((0,0,255))
+            sheet = Spritesheet("assets/conveyor-tile.png")
 
         elif self.type == TileType.package_spawner:
-            surf.fill((0,123,123))
+            sheet = Spritesheet("assets/conveyor-tile.png")
 
-        self._surf = surf
-        return surf
+        else:
+            sheet = Spritesheet("assets/floor_tile.png")
+
+        assert sheet != None
+        return sheet
 
 class TileType(enum.Enum):
     wall             = enum.auto()
