@@ -150,8 +150,8 @@ class Office:
 
 
     def render(self, surf: pygame.Surface) -> None:
-        for y in range(len(self._map_data)):
-            for x, tile in enumerate(self._map_data[y]):
+        for column in self._map_data:
+            for tile in column:
                 surf.blit(tile.surf, tile.pos.as_tuple())
 
     def update(self, dt: float) -> None:
