@@ -7,6 +7,7 @@ import pygame
 import sys
 import enum
 import math
+import random
 
 #DEFINES
 DISPLAY_DIMESION = (1080, 720)
@@ -23,6 +24,7 @@ SPAWN_INTERVAL = 4
 
 class Interactable(Protocol):
     pos: Vec2
+    behaviour: PackageBehaviour
     def interact(self, postman: Postman) -> None:
         ...
     def drop(self) -> None:
@@ -91,6 +93,10 @@ class WallBehaviour(Behaviour):
 class PackageBehaviour(Behaviour):
     can_pickup = True
     does_update = True
+    weight_modifier: float = 1
+
+class HeavyPackageBehaviour(PackageBehaviour):
+    weight_modifier: float = .3
 
 class FloorBehaviour(Behaviour):
     can_walk_through = True
@@ -214,11 +220,12 @@ class Postman:
 
         start_pos = self.pos.copy()
 
-        self.pos.x = self.pos.x + delta.x
+        speed_modifier = self._get_speed_modifier()
+        self.pos.x = self.pos.x + delta.x * speed_modifier
         if self.coliding:
             self.pos.x = start_pos.x
 
-        self.pos.y = self.pos.y + delta.y
+        self.pos.y = self.pos.y + delta.y * speed_modifier
         if self.coliding:
             self.pos.y = start_pos.y
 
@@ -227,6 +234,11 @@ class Postman:
 
     def render(self, surf: pygame.Surface) -> None:
         surf.blit(self.sprite, (self.pos.x,self.pos.y))
+
+    def _get_speed_modifier(self) -> float:
+        if self.currently_holding:
+            return self.currently_holding.behaviour.weight_modifier
+        return 1
 
     def _handle_inputs(self, dt: float) -> Vec2:
         keys = pygame.key.get_pressed()
@@ -372,17 +384,39 @@ class Office:
         assert len(data) == MAP_HEIGHT, "map data height is not of correct size"
         return data
 
+class PackageVariation(enum.Enum):
+    mail                  = enum.auto()
+    mail_with_envelope    = enum.auto()
+    package               = enum.auto()
+    package_with_postmark = enum.auto()
+    package_with_fragile  = enum.auto()
+    package_with_heavy    = enum.auto()
+
+def generate_random_package_variant() -> PackageVariation:
+    return PackageVariation[random.choice(PackageVariation._member_names_)]
+
 class Package:
     def __init__(self, pos: tuple[int, int], direction: Direction) -> None:
         self.pos = Vec2.from_tuple(pos)
-        self.surf = pygame.image.load("assets/mail-0.png")
-        self.behaviour = PackageBehaviour
+        self.variation: PackageVariation = generate_random_package_variant()
+        self.surf = pygame.image.load(f"assets/{self.variation.name}.png")
         self.direction = direction
         self.colissions: list[Package] | None = None
         self.speed = 3
         self.on_conveyor: bool = True
         self.at_end: bool = False
         self.being_held: bool = False
+
+    @property
+    def coliding(self) -> bool:
+        return any([self.get_rect().colliderect(package.get_rect()) for package in self.colissions]) if self.colissions != None else False
+
+    @property
+    def behaviour(self) -> PackageBehaviour:
+        if self.variation is PackageVariation.package_with_heavy:
+            return HeavyPackageBehaviour()
+        else:
+            return PackageBehaviour()
 
     def update(self, dt) -> None:
         if self.at_end or not self.on_conveyor:
@@ -423,9 +457,8 @@ class Package:
         rect.y = int(self.pos.y)
         return rect
 
-    @property
-    def coliding(self) -> bool:
-        return any([self.get_rect().colliderect(package.get_rect()) for package in self.colissions]) if self.colissions != None else False
+    def __str__(self) -> str:
+        return str(self.variation.name.replace("_", " "))
 
 class Tool:
     ...
