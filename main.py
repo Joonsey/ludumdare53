@@ -30,6 +30,10 @@ class FloorBehaviour(Behaviour):
 class ConveyorBehaviour(Behaviour):
     pass
 
+class Postman:
+    def __init__(self, pos: tuple[int, int]) -> None:
+        self.pos = pos
+
 class Level(enum.IntEnum):
     test  = 0
     one   = enum.auto()
@@ -39,17 +43,22 @@ class Office:
     def __init__(self, size: int) -> None:
         self.size = size
         self._map_data: list[list[Tile]] = [[]]
+        self._player: None | Postman = None
 
     def generate_map(self, level: Level) -> None:
         data = self._load_map(level)
         for y in range(0, len(data)):
             row = []
-            for char in data[y]:
+            for x, char in enumerate(data[y]):
                 if char == '#':
                     row.append(Tile(TileType.wall))
 
                 elif char == '-':
                     row.append(Tile(TileType.conveyor))
+
+                elif char == 'X':
+                    self._player = Postman((x * SIZE, y * SIZE))
+                    row.append(Tile(TileType.floor))
 
                 else:
                     row.append(Tile(TileType.floor))
@@ -62,6 +71,10 @@ class Office:
         for y in range(len(self._map_data)):
             for x, tile in enumerate(self._map_data[y]):
                 surf.blit(tile.surf, (x * self.size, y * self.size))
+
+    def get_player(self) -> Postman:
+        assert isinstance(self._player, Postman), "player not initialized during map generation!"
+        return self._player
 
     def _load_map(self, level: Level) -> list[str]:
         data = []
@@ -120,6 +133,9 @@ class Game:
 
         self.office = Office(size=SIZE)
         self.office.generate_map(Level.test)
+
+        # The same pointer is shared between Game and Officer
+        self.player = self.office.get_player()
 
     def run(self):
         while self.running:
