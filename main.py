@@ -8,28 +8,49 @@ import pygame
 import sys
 import enum
 
+#DEFINES
 DISPLAY_DIMESION = (1080, 720)
 RENDER_DIMENSION = (400, 240)
 
 SIZE = 16
 FPS = 60
-
-pygame.init()
-
 MAP_WIDTH = 25
+
+
+
+class Direction(enum.Enum):
+    up = enum.auto()
+    down = enum.auto()
+    left = enum.auto()
+    right = enum.auto()
 
 class Behaviour(Protocol):
     can_walk_through = False
     can_pickup = False
+    does_update = False
 
 class WallBehaviour(Behaviour):
     pass
+
+class PackageBehaviour(Behaviour):
+    can_pickup = True
+    does_update = True
 
 class FloorBehaviour(Behaviour):
     can_walk_through = True
 
 class ConveyorBehaviour(Behaviour):
-    pass
+    direction: Direction
+    does_update = True
+
+class ConveyorSpawnerBehaviour(ConveyorBehaviour):
+    interval: int = 4
+    delta: float = interval
+
+    def spawn_package(self, pos: tuple[int, int], office: Office) -> None:
+        package = Package(pos, self.direction)
+        office.packages.append(package)
+
 
 class Vec2:
     def __init__(self, x: int | float, y: int | float) -> None:
@@ -48,6 +69,9 @@ class Vec2:
 
     def as_tuple(self) -> tuple:
         return (self.x, self.y)
+
+    def copy(self) -> Vec2:
+        return Vec2(self.x, self.y)
 
 class Postman:
     def __init__(self, pos: tuple[int | float, int | float]) -> None:
@@ -81,7 +105,6 @@ class Postman:
         #need to wait until i have better test sprite
         self.pos.x = self.pos.x + delta.x
         self.pos.y = self.pos.y + delta.y
-
 
     def render(self, surf: pygame.Surface) -> None:
         surf.blit(self.sprite, (self.pos.x,self.pos.y))
@@ -125,6 +148,7 @@ class Office:
         self.size = size
         self._map_data: list[list[Tile]] = [[]]
         self._player: None | Postman = None
+        self.packages: list[Package] = []
 
     def generate_map(self, level: Level) -> None:
         data = self._load_map(level)
@@ -137,6 +161,12 @@ class Office:
 
                 elif char == '-':
                     row.append(Tile(TileType.conveyor, pos))
+
+                elif char == '+':
+                    tile = Tile(TileType.package_spawner, pos)
+                    assert isinstance(tile.behaviour, ConveyorSpawnerBehaviour)
+                    tile.behaviour.direction = Direction.left
+                    row.append(tile)
 
                 elif char == 'X':
                     self._player = Postman(pos)
@@ -153,12 +183,23 @@ class Office:
         for column in self._map_data:
             for tile in column:
                 surf.blit(tile.surf, tile.pos.as_tuple())
+        for package in self.packages:
+            surf.blit(package.surf, package.pos.as_tuple())
 
     def update(self, dt: float) -> None:
+        tiles = [tile for subtiles in self._map_data for tile in subtiles]
         if self._player:
-            tiles = [tile for subtiles in self._map_data for tile in subtiles]
             self._player.colissions = list(filter(lambda x: not x.behaviour.can_walk_through, tiles))
 
+        for tile in tiles:
+            if tile.behaviour.does_update:
+                tile.update(dt, self)
+
+        for package in self.packages:
+            package.colissions = self.packages
+            package.update(dt)
+
+        print(self.packages)
 
     def get_player(self) -> Postman:
         assert isinstance(self._player, Postman), "player not initialized during map generation!"
@@ -176,29 +217,60 @@ class Office:
         return data
 
 class Package:
-    ...
+    def __init__(self, pos: tuple[int, int], direction: Direction) -> None:
+        self.pos = Vec2.from_tuple(pos)
+        self.surf: pygame.Surface = pygame.Surface((12,12))
+        self.surf.fill((123,213,13))
+        self.behaviour = PackageBehaviour
+        self.direction = direction
+        self.colissions: list[Package] | None = None
+        self.speed = 3
+
+    def update(self, dt) -> None:
+        normalized_dt = dt / 100
+        start_pos = self.pos.copy()
+        if self.direction == Direction.up:
+            self.pos.y += normalized_dt * self.speed
+        if self.direction == Direction.down:
+            self.pos.y -= normalized_dt * self.speed
+
+        if self.coliding:
+            self.pos = start_pos
+
+        if self.direction == Direction.right:
+            self.pos.x += normalized_dt * self.speed
+        if self.direction == Direction.left:
+            self.pos.x -= normalized_dt * self.speed
+
+        if self.coliding:
+            self.pos = start_pos
+
+    def update_direction(self, direction) -> None:
+        self.direction = direction
+
+    @property
+    def coliding(self) -> bool:
+        return False
 
 class Tool:
     ...
 
 class Tile:
-    def __init__(self, type: TileType, pos : tuple[int, int]) -> None:
+    def __init__(self, type: TileType, pos: tuple[int, int]) -> None:
         self.type = type
         self.pos = Vec2.from_tuple(pos)
+        self._surf: None | pygame.Surface = None
+        self._behaviour: None | Behaviour =  None
 
-    @property
-    def behaviour(self) -> Behaviour:
-        behaviour = Behaviour
-        if self.type == TileType.wall:
-            behaviour = WallBehaviour
+    def update(self, dt: float, office: Office):
+        assert self.behaviour.does_update, "tried to update on a tile without update behaviour"
 
-        elif self.type == TileType.floor:
-            behaviour = FloorBehaviour
+        if isinstance(self.behaviour, ConveyorSpawnerBehaviour):
+            self.behaviour.delta -= dt/1000
+            if self.behaviour.delta < 0:
+                self.behaviour.spawn_package(self.pos.as_tuple(), office)
+                self.behaviour.delta = self.behaviour.interval
 
-        elif self.type == TileType.conveyor:
-            behaviour = ConveyorBehaviour
-
-        return behaviour
 
     def get_rect(self) -> pygame.Rect:
         rect = self.surf.get_rect()
@@ -207,23 +279,53 @@ class Tile:
         return rect
 
     @property
+    def behaviour(self) -> Behaviour:
+        if self._behaviour:
+            return self._behaviour
+
+        behaviour = Behaviour
+        if self.type == TileType.wall:
+            behaviour = WallBehaviour()
+
+        elif self.type == TileType.package_spawner:
+            behaviour = ConveyorSpawnerBehaviour()
+
+        elif self.type == TileType.floor:
+            behaviour = FloorBehaviour()
+
+        elif self.type == TileType.conveyor:
+            behaviour = ConveyorBehaviour()
+
+        self._behaviour = behaviour
+        return behaviour
+
+
+    @property
     def surf(self) -> pygame.Surface:
+        if self._surf:
+            return self._surf
         surf = pygame.Surface((SIZE, SIZE))
         if self.type == TileType.wall:
             surf.fill((255,0,0))
 
-        if self.type == TileType.floor:
+        elif self.type == TileType.floor:
             surf.fill((0,255,0))
 
-        if self.type == TileType.conveyor:
+        elif self.type == TileType.conveyor:
             surf.fill((0,0,255))
 
+        elif self.type == TileType.package_spawner:
+            surf.fill((0,123,123))
+
+        self._surf = surf
         return surf
 
 class TileType(enum.Enum):
-    wall      = enum.auto()
-    floor     = enum.auto()
-    conveyor  = enum.auto()
+    wall             = enum.auto()
+    floor            = enum.auto()
+    conveyor         = enum.auto()
+    conveyorend      = enum.auto()
+    package_spawner  = enum.auto()
 
 
 class Game:
@@ -271,5 +373,6 @@ class Game:
                 sys.exit()
 
 if __name__ == "__main__":
+    pygame.init()
     game = Game(DISPLAY_DIMESION)
     game.run()
