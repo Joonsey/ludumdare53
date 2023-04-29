@@ -18,15 +18,21 @@ FPS = 60
 MAP_WIDTH = 25
 MAP_HEIGHT = 11
 INTERACT_INTERVAL = .6
+INTERACT_RANGE = 15
 PACKAGE_DROP_RADIUS = 17
 SPAWN_INTERVAL = 4
 
 
 class Interactable(Protocol):
     pos: Vec2
-    behaviour: PackageBehaviour
+
+    @property
+    def behaviour(self) -> PackageBehaviour :
+        ...
+
     def interact(self, postman: Postman) -> None:
         ...
+
     def drop(self) -> None:
         ...
 
@@ -101,6 +107,9 @@ class HeavyPackageBehaviour(PackageBehaviour):
 class FloorBehaviour(Behaviour):
     can_walk_through = True
 
+class StamperBehaviour(Behaviour):
+    does_update = True
+
 class ConveyorBehaviour(Behaviour):
     animated = True
     direction: Direction
@@ -158,7 +167,7 @@ class Postman:
         self.speed = 1.4
         self.sprite = pygame.image.load("assets/player.png").convert_alpha()
         self.colissions: list[Tile] | None = None
-        self.range = 20
+        self.range = INTERACT_RANGE
         self.nearest_interactable: None | Interactable = None
         self.currently_holding: None | Interactable = None
         self.interact_delta: float = INTERACT_INTERVAL
@@ -221,7 +230,7 @@ class Postman:
         start_pos = self.pos.copy()
 
         speed_modifier = self._get_speed_modifier()
-        self.pos.x = self.pos.x + delta.x * speed_modifier
+        self.pos.x = self.pos.x + delta.x *speed_modifier
         if self.coliding:
             self.pos.x = start_pos.x
 
@@ -304,6 +313,9 @@ class Office:
 
                 elif char == '-e':
                     row.append(Tile(TileType.conveyorend, pos))
+
+                elif char == 't':
+                    row.append(Tile(TileType.stamper, pos))
 
                 elif char == '+':
                     tile = Tile(TileType.package_spawner, pos)
@@ -486,6 +498,15 @@ class Tile:
                 self.sheet.next()
                 self.behaviour.animation_delta = self.behaviour.animation_interval
 
+        if self.type is TileType.stamper:
+            assert office._player != None
+            distance = office._player.pos.get_absolute_distance(self.pos)
+            if distance <= INTERACT_RANGE:
+                # it is odd that this is drawn in the update hook
+                self._display_text_highlight((self.pos + Vec2(0, 16)).as_tuple())
+
+    def _display_text_highlight(self, pos: tuple[int, int]) -> None:
+        ...
 
     def get_rect(self) -> pygame.Rect:
         rect = self.sheet.active.get_rect()
@@ -539,6 +560,9 @@ class Tile:
         elif self.type == TileType.package_spawner:
             sheet = Spritesheet("assets/conveyor-tile.png")
 
+        elif self.type == TileType.stamper:
+            sheet = Spritesheet("assets/stamper.png")
+
         else:
             sheet = Spritesheet("assets/floor_tile.png")
 
@@ -553,6 +577,7 @@ class TileType(enum.Enum):
     package_spawner  = enum.auto()
     drop_of          = enum.auto()
     wall_full        = enum.auto()
+    stamper          = enum.auto()
 
 
 class Game:
